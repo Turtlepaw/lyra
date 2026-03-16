@@ -105,7 +105,7 @@
   </PropertyGroup>
 
   <Target Name="BuildRustFfi" BeforeTargets="Build">
-    <Exec Command="$(USERPROFILE)\.cargo\bin\cargo.exe build $(RustCargoProfileArg) --target $(RustTargetTriple)" WorkingDirectory="$(RustFfiProjectDir)" />
+    <Exec Command="cargo build $(RustCargoProfileArg) --target $(RustTargetTriple)" WorkingDirectory="$(RustFfiProjectDir)" />
   </Target>
 
   <Target Name="CopyRustFfiToOutput" AfterTargets="Build" DependsOnTargets="BuildRustFfi">

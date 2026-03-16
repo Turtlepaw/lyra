@@ -8,10 +8,13 @@ on:
 
 jobs:
   build:
-    name: Build and Release
+    name: Build (${{ matrix.platform }})
     runs-on: windows-latest
     permissions:
       contents: write
+    strategy:
+      matrix:
+        platform: [x64, x86, ARM64]
 
     steps:
       - name: Checkout
@@ -20,7 +23,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc, i686-pc-windows-msvc, aarch64-pc-windows-msvc
+          targets: ${{ matrix.platform == 'x64' && 'x86_64-pc-windows-msvc' || matrix.platform == 'x86' && 'i686-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -30,41 +33,71 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Decode the PFX
+        id: decode_pfx
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.BASE64_PFX }}
+        run: |
+          if (-not $env:PFX_BASE64) {
+            Write-Host "No PFX_BASE64 secret found, skipping signing."
+            echo "HAS_PFX=false" >> $env:GITHUB_OUTPUT
+            return
+          }
+          $pfx_cert_byte = [System.Convert]::FromBase64String($env:PFX_BASE64)
+          $certificatePath = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "GitHubActionsWorkflow.pfx"
+          [System.IO.File]::WriteAllBytes($certificatePath, $pfx_cert_byte)
+          echo "HAS_PFX=true" >> $env:GITHUB_OUTPUT
+          echo "PFX_PATH=$certificatePath" >> $env:GITHUB_ENV
+
       - name: Restore NuGet packages
         run: msbuild -t:restore Package\Package.wapproj
 
       - name: Build Packaging Project
-        # Note: AppxPackageSigningEnabled=false is used to avoid certificate issues in CI.
-        # This will produce an unsigned package suitable for sideloading.
-        # If signing is needed, provide a certificate and password via secrets.
-        run: |
-          msbuild Package\Package.wapproj `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:AppxBundle=Always `
-            /p:AppxBundlePlatforms="x86|x64|ARM64" `
-            /p:UapAppxPackageBuildMode=SideloadOnly `
-            /p:AppxPackageSigningEnabled=false
-
-      - name: Find MSIX Bundle
-        id: find_msix
         shell: pwsh
         run: |
-          $msixBundle = Get-ChildItem -Path Package\AppPackages -Filter *.msixbundle -Recurse | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $msixBundle) {
-            $msixBundle = Get-ChildItem -Path Package\AppPackages -Filter *.msix -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          $signingArgs = if ("${{ steps.decode_pfx.outputs.HAS_PFX }}" -eq "true") {
+            "/p:AppxPackageSigningEnabled=true /p:PackageCertificateKeyFile=$env:PFX_PATH /p:PackageCertificatePassword='${{ secrets.PFX_PASSWORD }}'"
+          } else {
+            "/p:AppxPackageSigningEnabled=false"
           }
-          if (-not $msixBundle) {
-            Write-Error "Could not find .msixbundle or .msix file in Package\AppPackages"
-            exit 1
-          }
-          echo "MSIX_PATH=$msixBundle" >> $env:GITHUB_ENV
-          Write-Host "Found artifact: $msixBundle"
+
+          # Using Invoke-Expression to handle dynamic signing arguments
+          $command = "msbuild Package\Package.wapproj `
+            /p:Configuration=Release `
+            /p:Platform=${{ matrix.platform }} `
+            /p:AppxBundle=Never `
+            /p:UapAppxPackageBuildMode=SideloadOnly `
+            /p:PublishReadyToRun=false `
+            /p:PublishTrimmed=false $signingArgs"
+          
+          Invoke-Expression $command
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MSIX-${{ matrix.platform }}
+          path: Package\AppPackages\**\*.msix
+
+  release:
+    name: Create Draft Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - name: Create Draft Release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: ${{ env.MSIX_PATH }}
+          files: artifacts/**/*.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
