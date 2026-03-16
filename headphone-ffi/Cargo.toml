@@ -1,0 +1,16 @@
+[package]
+name = "headphone-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "headphone_ffi"
+crate-type = ["cdylib"]
+
+[dependencies]
+openscq30-lib = { git = "https://github.com/Oppzippy/OpenSCQ30" }
+tokio = { version = "1", features = ["full"] }
+once_cell = "1"
+macaddr = "1"
+strum = "0.26" # Match version used in openscq30 roughly or use latest compatible
+strum_macros = "0.26"

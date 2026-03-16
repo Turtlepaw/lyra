@@ -1,0 +1,122 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>OpenSoundcoreWindows</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <Nullable>enable</Nullable>
+    <RustFfiProjectDir>$(MSBuildProjectDirectory)\..\headphone-ffi</RustFfiProjectDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'x86' or '$(RuntimeIdentifier)' == 'win-x86' or '$(RuntimeIdentifier)' == 'win10-x86'">
+    <RustTargetTriple>i686-pc-windows-msvc</RustTargetTriple>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'x64' or '$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win10-x64' or ('$(Platform)' == '' and '$(RustTargetTriple)' == '')">
+    <RustTargetTriple>x86_64-pc-windows-msvc</RustTargetTriple>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'ARM64' or '$(RuntimeIdentifier)' == 'win-arm64' or '$(RuntimeIdentifier)' == 'win10-arm64'">
+    <RustTargetTriple>aarch64-pc-windows-msvc</RustTargetTriple>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RustCargoProfileArg>--release</RustCargoProfileArg>
+    <RustOutputProfileDir>release</RustOutputProfileDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' != 'Release'">
+    <RustCargoProfileArg></RustCargoProfileArg>
+    <RustOutputProfileDir>debug</RustOutputProfileDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RustFfiTargetDir>$(RustFfiProjectDir)\target\$(RustTargetTriple)\$(RustOutputProfileDir)</RustFfiTargetDir>
+    <RustFfiDll>$(RustFfiTargetDir)\headphone_ffi.dll</RustFfiDll>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\SplashScreen.scale-200.png" />
+    <Content Include="Assets\LockScreenLogo.scale-200.png" />
+    <Content Include="Assets\Square150x150Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
+    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <Content Condition="Exists('..\headphone-ffi\target\$(RustTargetTriple)\$(RustOutputProfileDir)\headphone_ffi.dll')" Include="..\headphone-ffi\target\$(RustTargetTriple)\$(RustOutputProfileDir)\headphone_ffi.dll" Link="headphone_ffi.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <!--
+    Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
+    Tools extension to be activated for this project even if the Windows App SDK Nuget
+    package has not yet been restored.
+  -->
+  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <ProjectCapability Include="Msix" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="AutoConnect.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="ConnectPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Update="AboutPage.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Update="DevicePage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+
+  <!--
+    Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
+    Explorer "Package and Publish" context menu entry to be enabled for this project even if
+    the Windows App SDK Nuget package has not yet been restored.
+  -->
+  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+  </PropertyGroup>
+
+  <!-- Publish Properties -->
+  <PropertyGroup>
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
+    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
+    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+  </PropertyGroup>
+
+  <Target Name="BuildRustFfi" BeforeTargets="Build">
+    <Exec Command="$(USERPROFILE)\.cargo\bin\cargo.exe build $(RustCargoProfileArg) --target $(RustTargetTriple)" WorkingDirectory="$(RustFfiProjectDir)" />
+  </Target>
+
+  <Target Name="CopyRustFfiToOutput" AfterTargets="Build" DependsOnTargets="BuildRustFfi">
+    <Warning Condition="!Exists('$(RustFfiDll)')" Text="Rust FFI output was not found at $(RustFfiDll). The app will run without openscq30 native integration until cargo build succeeds." />
+    <!-- Rename the old file to release any file lock before overwriting -->
+    <Exec Command="if exist &quot;$(OutDir)headphone_ffi.dll&quot; move /Y &quot;$(OutDir)headphone_ffi.dll&quot; &quot;$(OutDir)headphone_ffi.dll.old&quot;" ContinueOnError="true" IgnoreExitCode="true" />
+    <!-- Copy to the main output directory (used by non-MSIX runs) -->
+    <Copy Condition="Exists('$(RustFfiDll)')" SourceFiles="$(RustFfiDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="false" />
+    <!-- Copy to the AppX staging directory when it already exists (incremental MSIX builds) -->
+    <Copy Condition="Exists('$(RustFfiDll)') and Exists('$(OutDir)AppX')" SourceFiles="$(RustFfiDll)" DestinationFolder="$(OutDir)AppX" SkipUnchangedFiles="false" ContinueOnError="WarnAndContinue" />
+    <!-- Also ensure the DLL is present in the publish output when publishing -->
+    <Copy Condition="Exists('$(RustFfiDll)') and '$(PublishDir)' != '' and Exists('$(PublishDir)')" SourceFiles="$(RustFfiDll)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="false" ContinueOnError="WarnAndContinue" />
+  </Target>
+</Project>

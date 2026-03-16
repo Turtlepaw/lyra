@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="OpenSoundcoreWindows.ConnectPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer>
+        <StackPanel Spacing="16" Padding="24">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+
+                <StackPanel Orientation="Vertical" Spacing="8">
+                    <TextBlock Text="Connected Bluetooth Devices" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                    <TextBlock x:Name="ConnectionStatusText" Text="Select your headphones below to connect" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+                <Button Click="RefreshDevices_Click">
+                    <SymbolIcon Symbol="Refresh"/>
+                </Button>
+                <Button x:Name="ConnectDemoButton" Content="Connect Demo Device" Click="ConnectDemo_Click" Visibility="Collapsed"/>
+            </StackPanel>
+            <ListView x:Name="ConnectedDevicesList" MaxHeight="140" SelectionChanged="ConnectedDevicesList_SelectionChanged"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
+                <ProgressRing x:Name="ConnectingProgressRing" IsActive="False" Visibility="Collapsed" Width="20" Height="20" VerticalAlignment="Center"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

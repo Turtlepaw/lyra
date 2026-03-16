@@ -1,0 +1,70 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc, i686-pc-windows-msvc, aarch64-pc-windows-msvc
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore NuGet packages
+        run: msbuild -t:restore Package\Package.wapproj
+
+      - name: Build Packaging Project
+        # Note: AppxPackageSigningEnabled=false is used to avoid certificate issues in CI.
+        # This will produce an unsigned package suitable for sideloading.
+        # If signing is needed, provide a certificate and password via secrets.
+        run: |
+          msbuild Package\Package.wapproj `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:AppxBundle=Always `
+            /p:AppxBundlePlatforms="x86|x64|ARM64" `
+            /p:UapAppxPackageBuildMode=SideloadOnly `
+            /p:AppxPackageSigningEnabled=false
+
+      - name: Find MSIX Bundle
+        id: find_msix
+        shell: pwsh
+        run: |
+          $msixBundle = Get-ChildItem -Path Package\AppPackages -Filter *.msixbundle -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $msixBundle) {
+            $msixBundle = Get-ChildItem -Path Package\AppPackages -Filter *.msix -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $msixBundle) {
+            Write-Error "Could not find .msixbundle or .msix file in Package\AppPackages"
+            exit 1
+          }
+          echo "MSIX_PATH=$msixBundle" >> $env:GITHUB_ENV
+          Write-Host "Found artifact: $msixBundle"
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: ${{ env.MSIX_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

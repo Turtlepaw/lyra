@@ -1,0 +1,15 @@
+# Statically link the MSVC C runtime for all Windows targets.
+# This makes headphone_ffi.dll self-contained: it will not require
+# vcruntime140.dll / msvcp140.dll at runtime, which are absent on a
+# fresh Windows install that has never had the Visual C++ Redistributable
+# installed.  Without this flag the DLL fails to load with
+# ERROR_MOD_NOT_FOUND (0x8007007E) on clean machines.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

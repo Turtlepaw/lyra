@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "OpenSoundcoreWindows (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "OpenSoundcoreWindows (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
