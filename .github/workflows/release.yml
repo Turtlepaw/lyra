@@ -47,7 +47,7 @@ jobs:
         shell: pwsh
         env:
           Base64_Encoded_Pfx: ${{ secrets.BASE64_PFX }}
-          Pfx_Key: ${{ secrets.Pfx_Key }}
+          Pfx_Key: ${{ secrets.BASE64_PFX }}
         run: |
           if (-not $env:Base64_Encoded_Pfx) {
             Write-Host "No Base64 PFX secret found, skipping signing."
