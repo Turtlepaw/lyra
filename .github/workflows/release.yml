@@ -6,11 +6,6 @@
 name: .NET Core Desktop
 
 on:
-  push:
-    tags: ["v*"]
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
 
 jobs:
