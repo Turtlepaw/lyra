@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -57,21 +57,27 @@ jobs:
         shell: pwsh
         run: |
           $signingArgs = if ("${{ steps.decode_pfx.outputs.HAS_PFX }}" -eq "true") {
-            "/p:AppxPackageSigningEnabled=true /p:PackageCertificateKeyFile=$env:PFX_PATH /p:PackageCertificatePassword='${{ secrets.PFX_PASSWORD }}'"
+            @(
+              '/p:AppxPackageSigningEnabled=true',
+              "/p:PackageCertificateKeyFile=$env:PFX_PATH",
+              "/p:PackageCertificatePassword=${{ secrets.PFX_PASSWORD }}"
+            )
           } else {
-            "/p:AppxPackageSigningEnabled=false"
+            @('/p:AppxPackageSigningEnabled=false')
           }
 
-          # Using Invoke-Expression to handle dynamic signing arguments
-          $command = "msbuild Package\Package.wapproj `
-            /p:Configuration=Release `
-            /p:Platform=${{ matrix.platform }} `
-            /p:AppxBundle=Never `
-            /p:UapAppxPackageBuildMode=SideloadOnly `
-            /p:PublishReadyToRun=false `
-            /p:PublishTrimmed=false $signingArgs"
-          
-          Invoke-Expression $command
+          $msbuildArgs = @(
+            'Package\Package.wapproj',
+            '/p:Configuration=Release',
+            "/p:Platform=${{ matrix.platform }}",
+            '/p:AppxBundle=Never',
+            '/p:UapAppxPackageBuildMode=SideloadOnly',
+            '/p:PublishReadyToRun=false',
+            '/p:PublishTrimmed=false'
+          ) + $signingArgs
+
+          Write-Host "Running msbuild with arguments: $($msbuildArgs -join ' ')"
+          & msbuild @msbuildArgs
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
