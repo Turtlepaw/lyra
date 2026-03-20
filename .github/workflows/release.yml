@@ -1,77 +1,100 @@
-name: Build and Release
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: .NET Core Desktop
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build (${{ matrix.platform }})
     runs-on: windows-latest
-    permissions:
-      contents: write
     strategy:
       matrix:
+        configuration: [Release]
         platform: [x64, x86, ARM64]
+
+    env:
+      Solution_Name: OpenSoundcoreWindows.slnx
+      Wap_Project_Directory: Package
+      Wap_Project_Path: Package\Package.wapproj
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'x64' && 'x86_64-pc-windows-msvc' || matrix.platform == 'x86' && 'i686-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }}
 
-      - name: Setup .NET
+      - name: Install .NET Core
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: 8.0.x
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Restore the application
+        run: msbuild $env:Solution_Name /t:Restore /p:Configuration=${{ matrix.configuration }}
+
       - name: Decode the PFX
-        id: decode_pfx
         shell: pwsh
         env:
-          PFX_BASE64: ${{ secrets.BASE64_PFX }}
+          Base64_Encoded_Pfx: ${{ secrets.BASE64_PFX }}
+          Pfx_Key: ${{ secrets.Pfx_Key }}
         run: |
-          if (-not $env:PFX_BASE64) {
-            Write-Host "No PFX_BASE64 secret found, skipping signing."
+          if (-not $env:Base64_Encoded_Pfx) {
+            Write-Host "No Base64 PFX secret found, skipping signing."
             echo "HAS_PFX=false" >> $env:GITHUB_OUTPUT
             return
           }
-          $pfx_cert_byte = [System.Convert]::FromBase64String($env:PFX_BASE64)
-          $certificatePath = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "GitHubActionsWorkflow.pfx"
+
+          if (-not $env:Pfx_Key) {
+            throw "Pfx_Key secret is required when Base64_Encoded_Pfx is present."
+          }
+
+          $pfx_cert_byte = [System.Convert]::FromBase64String($env:Base64_Encoded_Pfx)
+          $certificatePath = Join-Path -Path $env:Wap_Project_Directory -ChildPath "GitHubActionsWorkflow.pfx"
           [System.IO.File]::WriteAllBytes($certificatePath, $pfx_cert_byte)
           echo "HAS_PFX=true" >> $env:GITHUB_OUTPUT
           echo "PFX_PATH=$certificatePath" >> $env:GITHUB_ENV
 
-      - name: Restore NuGet packages
-        run: msbuild -t:restore Package\Package.wapproj
-
-      - name: Build Packaging Project
+      - name: Create the app package
         shell: pwsh
+        env:
+          Appx_Bundle: Never
+          UapAppxPackageBuildMode: SideloadOnly
         run: |
-          $signingArgs = if ("${{ steps.decode_pfx.outputs.HAS_PFX }}" -eq "true") {
-            @(
+          $configuration = '${{ matrix.configuration }}'
+          $platform = '${{ matrix.platform }}'
+
+          if ("${{ steps.decode_pfx.outputs.HAS_PFX }}" -eq "true") {
+            $signingArgs = @(
               '/p:AppxPackageSigningEnabled=true',
               "/p:PackageCertificateKeyFile=$env:PFX_PATH",
-              "/p:PackageCertificatePassword=${{ secrets.PFX_PASSWORD }}"
+              "/p:PackageCertificatePassword=$env:Pfx_Key"
             )
           } else {
-            @('/p:AppxPackageSigningEnabled=false')
+            $signingArgs = @('/p:AppxPackageSigningEnabled=false')
           }
 
           $msbuildArgs = @(
-            'Package\Package.wapproj',
-            '/p:Configuration=Release',
-            "/p:Platform=${{ matrix.platform }}",
-            '/p:AppxBundle=Never',
-            '/p:UapAppxPackageBuildMode=SideloadOnly',
+            "$env:Wap_Project_Path",
+            "/p:Configuration=$configuration",
+            "/p:Platform=$platform",
+            "/p:AppxBundle=$env:Appx_Bundle",
+            "/p:UapAppxPackageBuildMode=$env:UapAppxPackageBuildMode",
             '/p:PublishReadyToRun=false',
             '/p:PublishTrimmed=false'
           ) + $signingArgs
@@ -79,14 +102,17 @@ jobs:
           Write-Host "Running msbuild with arguments: $($msbuildArgs -join ' ')"
           & msbuild @msbuildArgs
 
-      - name: Upload Artifact
+      - name: Remove the pfx
+        shell: pwsh
+        run: Remove-Item -Path "$env:Wap_Project_Directory\GitHubActionsWorkflow.pfx" -ErrorAction SilentlyContinue
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MSIX-${{ matrix.platform }}
-          path: Package\AppPackages\**\*.msix
+          name: MSIX Package (${{ matrix.platform }})
+          path: ${{ env.Wap_Project_Directory }}\AppPackages\**\*.msix
 
   release:
-    name: Create Draft Release
     needs: build
     runs-on: ubuntu-latest
     permissions:
